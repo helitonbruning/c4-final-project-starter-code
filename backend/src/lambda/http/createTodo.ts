@@ -1,42 +1,34 @@
 import 'source-map-support/register'
-import { APIGatewayProxyEvent, APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda'
+import * as middy from 'middy'
+import { cors } from 'middy/middlewares'
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
 import { CreateTodoRequest } from '../../requests/CreateTodoRequest'
-import * as AWS  from 'aws-sdk'
-import * as uuid from 'uuid'
-import { parseUserId } from '../../auth/utils'
+import { getUserId } from '../utils'
+import { createTodo } from '../../businessLogic/todos'
+import { createLogger } from '../../utils/logger'
 
-const docClient = new AWS.DynamoDB.DocumentClient()
-const todosTable = process.env.TODOS_TABLE
+const logger = createLogger('auth')
 
-export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  console.log('Processing event: ', event)
-  const newTodo: CreateTodoRequest = JSON.parse(event.body)
-  const itemId = uuid.v4()
+export const handler = middy(
+  async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+    const newTodo: CreateTodoRequest = JSON.parse(event.body)
+    const userId = getUserId(event)
 
-  // TODO: Implement creating a new TODO item
-  const authorization = event.headers.Authorization
-  const split = authorization.split(' ')
-  const jwtToken = split[1]
+    logger.info(`Received request for creating todo item for user ${userId}...`)
 
-  const newItem = {
-    id: itemId,
-    userId: parseUserId(jwtToken),
-    ...newTodo
+    const item = createTodo(newTodo, userId)
+
+    return {
+      statusCode: 201,
+      body: JSON.stringify({
+        item
+      })
+    }
   }
+)
 
-  await docClient.put({
-    TableName: todosTable,
-    Item: newItem
-  }).promise()
-
-  return {
-    statusCode: 201,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Credentials': true
-    },
-    body: JSON.stringify({
-      newItem
-    })
-  }
-}
+handler.use(
+  cors({
+    credentials: true
+  })
+)
